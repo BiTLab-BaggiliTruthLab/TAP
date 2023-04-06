@@ -16,6 +16,7 @@ import json
 import plotly.express as px
 from geopy.geocoders import Nominatim
 import geopy.distance
+import xml.etree.ElementTree as ET
 
 # setup
 
@@ -46,12 +47,18 @@ sqlPoints = []
 # file list
 global sqlFiles
 global memFiles
+global andriodFiles
 sqlFiles = []
 memFiles = []
+andriodFiles = []
 
 # potentially spoofed locations points
 global spoofPoints
 spoofPoints = []
+
+# andriod parsed data
+global andriodData
+andriodData = {}
 
 ### These objects are not used. They are just for representation of what the dictionaries will look like ###
 ##### LocationData for Memory Dumps and signature to look for in memory #####
@@ -190,7 +197,7 @@ def parseArgs():
             out_arg = out_arg
 
     elif os.path.isdir(in_arg):  # directory input
-        print(in_arg)
+        #print(in_arg)
         in_files_list = [f for f in os.listdir(in_arg) if os.path.isfile(os.path.join(in_arg, f))]
         in_dir = in_arg
 
@@ -222,6 +229,13 @@ def parseArgs():
 
         elif fileType == "vmem" or fileType == "mem":
             memFiles.append(in_files_list[0])
+    
+    if len(in_files_list) > 1:
+        for f in in_files_list:
+            if f == "TilePrefs.xml":
+                andriodFiles.append(f)
+ 
+    
 
 
 def processMEM():
@@ -477,6 +491,22 @@ def checkspoof():
             except:
                 lastitem = item
 
+def parseAndriod():
+    global andriodFiles
+    global andriodData
+
+    for i in andriodFiles:
+        tree = ET.parse(i)
+        root = tree.getroot()     
+        for child in root:
+            if child.text is not None:
+                    temp = {child.get('name'):child.text}
+                    andriodData.update(temp)
+            if child.get('value') is not None:
+                    temp = {child.get('name'):child.get('value')}
+                    andriodData.update(temp)
+
+
 def createReport():
     global in_arg
     global out_arg
@@ -489,6 +519,8 @@ def createReport():
 
     global memPoints
     global sqlPoints
+
+    global andriodData
 
     if out_arg is None:
         out_arg = "out.txt"
@@ -571,6 +603,22 @@ def createReport():
         f.write("\n")
     f.write("#########################################\n")
 
+    f.write("Andriod User TilePrefs.xml:")
+    f.write("\n=============================================================\n")
+    if andriodData.get('KEY_EMAIL') is not None:
+        f.write('\nKEY_EMAIL: '+andriodData.get('KEY_EMAIL'))
+    if andriodData.get('KEY_NUM_USER_TILES') is not None:
+        f.write('\nKEY_NUM_USER_TILES: '+andriodData.get('KEY_NUM_USER_TILES'))
+    if andriodData.get('KEY_USER_UUID') is not None:
+        f.write('\nKEY_USER_UUID: '+andriodData.get('KEY_USER_UUID'))
+    if andriodData.get('KEY_COOKIE') is not None:
+        f.write('\nKEY_COOKIE: '+andriodData.get('KEY_COOKIE'))
+    if andriodData.get('KEY_CLIENT_UUID') is not None:
+        f.write('\nKEY_CLIENT_UUID: '+andriodData.get('KEY_CLIENT_UUID'))
+    if andriodData.get('PHONE_TILE_UUID') is not None:
+        f.write('\nPHONE_TILE_UUID: '+andriodData.get('PHONE_TILE_UUID'))
+
+
     f.close()
 
 
@@ -611,6 +659,8 @@ def main():
     drawSQL()
 
     #####################
+
+    parseAndriod()
 
     # create a report
     createReport()
