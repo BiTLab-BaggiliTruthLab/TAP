@@ -53,19 +53,26 @@ memFiles = []
 andriodFiles = []
 
 # potentially spoofed locations points
-global spoofPoints
-spoofPoints = []
+global sqlspoofPoints
+global memspoofPoints
+sqlspoofPoints = []
+memspoofPoints = []
 
 # andriod parsed data
 global andriodData
 andriodData = {}
+
+## On/Off flags
+global spoofFlag
 
 ### These objects are not used. They are just for representation of what the dictionaries will look like ###
 ##### LocationData for Memory Dumps and signature to look for in memory #####
 MEMORY_SIGNATURE = 'tile_uuid'
 
 
-geolocator = Nominatim(user_agent="geoapiExercises")
+## Replace the user_agent parameter
+user_agent = "TAP"
+geolocator = Nominatim(user_agent=user_agent)
 
 
 class MemLocationData:
@@ -152,13 +159,14 @@ def setupParser():
                         help='path to output CSV File or directory. If none is specified the output will be saved in the current directory as output.txt.')
     parser.add_argument('-s', '--startdate', help='Set a date range in the format d/m/y ')
     parser.add_argument('-e', '--enddate', help='Set a date range in the format d/m/y ')
-    parser.add_argument('-f', '--falsified', help='This flag enables spoofing detection. ')
+    parser.add_argument('-f', '--falsified', help='This flag enables spoofing detection. ',action='store_true')
 
 def parseArgs():
     global in_arg
     global out_arg
     global start_date
     global end_date
+    global spoofFlag
 
     args = parser.parse_args()
 
@@ -166,6 +174,7 @@ def parseArgs():
     in_arg = args.input
     out_arg = args.output
 
+    spoofFlag = args.falsified
 
     ##date parsing
     #######################################################
@@ -367,6 +376,7 @@ def processSQL():
 
 def drawMEM():
     global memPoints
+    global memspoofPoints
     if len(memPoints) == 0:
         return
 
@@ -378,6 +388,13 @@ def drawMEM():
 
     fig.add_traces(px.line_mapbox(memPoints, lat="latitude", lon="longitude").data)
 
+    if len(memspoofPoints) != 0:
+        fig2 = px.scatter_mapbox(memspoofPoints, lat="latitude", lon="longitude", hover_name=["Potentially Spoofed Location"]*len(memspoofPoints),
+                                hover_data=["tile_uuid", "location_timestamp"],
+                                color_discrete_sequence=["Black"], zoom=10, height=1000)
+        fig.add_trace(fig2.data[0])
+
+
     fig.write_html('memlocations.html', auto_open=True)
 
     fig.show()
@@ -386,6 +403,8 @@ def drawMEM():
 def drawSQL():
     global sqlPoints
     global spoofPoints
+    global sqlspoofPoints
+
     if len(sqlPoints) == 0:
         return
 
@@ -393,17 +412,16 @@ def drawSQL():
                             hover_data=["ZSUBLOCALITY", "ZTIMESTAMP"],
                             color_discrete_sequence=["Red"], zoom=10, height=1000)
 
-    
-
     fig.update_layout(mapbox_style="open-street-map")
     fig.update_layout(margin={"r": 0, "t": 0, "l": 0, "b": 0})
 
     fig.add_traces(px.line_mapbox(sqlPoints,lat="ZLATITUDE", lon="ZLONGITUDE", hover_data=["ZTIMESTAMP"]).data)
 
-    fig2 = px.scatter_mapbox(spoofPoints, lat="ZLATITUDE", lon="ZLONGITUDE", hover_name=["Potentially Spoofed Location"]*len(spoofPoints),
-                            hover_data=["ZSUBLOCALITY", "ZTIMESTAMP"],
-                            color_discrete_sequence=["Black"], zoom=10, height=1000)
-    fig.add_trace(fig2.data[0])
+    if len(sqlspoofPoints) != 0:
+        fig2 = px.scatter_mapbox(sqlspoofPoints, lat="ZLATITUDE", lon="ZLONGITUDE", hover_name=["Potentially Spoofed Location"]*len(sqlspoofPoints),
+                                hover_data=["ZSUBLOCALITY", "ZTIMESTAMP"],
+                                color_discrete_sequence=["Black"], zoom=10, height=1000)
+        fig.add_trace(fig2.data[0])
 
 
     fig.write_html('sqllocations.html', auto_open=True)
@@ -412,24 +430,32 @@ def drawSQL():
 
 
 def checkspoof():
+    global spoofFlag
+
+    if not spoofFlag:
+        return
+
     global memPoints
     global sqlPoints
 
-    global spoofPoints
+    global sqlspoofPoints
+    global memspoofPoints
 
     if sqlPoints != None:
         lastitem = None
         lastLocation = None
         newLocation = None
         for item in sqlPoints:
-            
+         
             try:
                 if lastLocation is None:
+                    
                     lastitem = item
                     lastLocation = geolocator.reverse(str(item.get('ZLATITUDE'))+", "+str(item.get('ZLONGITUDE')))
                     address = lastLocation.raw['address']
                     lastLocation = address.get('state')
                 else:
+                    
                     newLocation = geolocator.reverse(str(item.get('ZLATITUDE'))+", "+str(item.get('ZLONGITUDE')))
                     
                 
@@ -438,17 +464,16 @@ def checkspoof():
                     coords_2 = (lastitem.get('ZLATITUDE'), lastitem.get('ZLONGITUDE'))
                     distancegap = geopy.distance.geodesic(coords_1, coords_2).miles
 
-
+    
                     speed = distancegap / (timegap/1000/60/60)
 
                     address = newLocation.raw['address']
                     newLocation = address.get('state')
 
-
                     if newLocation != lastLocation:
-                        print(f"time1 {item.get('ZTIMESTAMP')}\n time2: {lastitem.get('ZTIMESTAMP')}\n, timegap:{timegap}\ncords1:{coords_1}\ncords2:{coords_2}\n,distance:{distancegap},speed:{speed}")
+                        #print(f"time1 {item.get('ZTIMESTAMP')}\n time2: {lastitem.get('ZTIMESTAMP')}\n, timegap:{timegap}\ncords1:{coords_1}\ncords2:{coords_2}\n,distance:{distancegap},speed:{speed}")
                         if speed > 600:
-                            spoofPoints.append(item)
+                            sqlspoofPoints.append(item)
                             lastLocation = newLocation
                             lastLocation = newLocation
                     lastitem = item
@@ -468,6 +493,7 @@ def checkspoof():
                 if lastLocation is None:
                     lastitem = item
                     lastLocation = geolocator.reverse(str(item.get('latitude'))+", "+str(item.get('longitude')))
+                    #print(lastLocation)
                     address = lastLocation.raw['address']
                     lastLocation = lastLocation.address.get('state')
                 else:
@@ -484,7 +510,7 @@ def checkspoof():
                     #print(f"time1 {item.get('location_timestamp')}\n time2: {lastitem.get('location_timestamp')}\n, timegap:{timegap}\ncords1:{coords_1}\ncords2:{coords_2}\n,distance:{distancegap},speed:{speed}")
                     if newLocation != newLocation:
                         if speed > 600:
-                            spoofPoints.append(item)
+                            memspoofPoints.append(item)
                             lastLocation = newLocation
                             lastLocation = newLocation
                     lastitem = item
@@ -593,12 +619,22 @@ def createReport():
     f.write("#########################################\n")
 
 
-    f.write("\nPossible spoofed data points\n")
+    f.write("\nPossible sqlspoofed data points\n")
     f.write("Amount of Points:")
-    f.write(str(len(spoofPoints)))
+    f.write(str(len(sqlspoofPoints)))
 
     f.write("\n#########################################\n")
-    for item in spoofPoints:
+    for item in sqlspoofPoints:
+        f.write(json.dumps(item))
+        f.write("\n")
+    f.write("#########################################\n")
+
+    f.write("\nPossible memspoofed data points\n")
+    f.write("Amount of Points:")
+    f.write(str(len(memspoofPoints)))
+
+    f.write("\n#########################################\n")
+    for item in memspoofPoints:
         f.write(json.dumps(item))
         f.write("\n")
     f.write("#########################################\n")
@@ -617,7 +653,6 @@ def createReport():
         f.write('\nKEY_CLIENT_UUID: '+andriodData.get('KEY_CLIENT_UUID'))
     if andriodData.get('PHONE_TILE_UUID') is not None:
         f.write('\nPHONE_TILE_UUID: '+andriodData.get('PHONE_TILE_UUID'))
-
 
     f.close()
 
