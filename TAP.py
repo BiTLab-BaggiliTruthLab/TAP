@@ -1,4 +1,6 @@
 # Christopher Bowen
+# Lauren Pace
+# LaSean Salmon
 # TAP
 # This script requires Python 3
 # To run this tool use the following command:
